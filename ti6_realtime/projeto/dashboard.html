@@ -1,0 +1,863 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>TI6 — Live Benchmark Dashboard</title>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.js"></script>
+<style>
+*, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+:root {
+  --bg:        #0f0f0e;
+  --bg2:       #161614;
+  --bg3:       #1e1e1b;
+  --bg4:       #262622;
+  --border:    rgba(255,255,255,0.08);
+  --border2:   rgba(255,255,255,0.14);
+  --text:      #e8e6df;
+  --text2:     #9e9c95;
+  --text3:     #5c5a54;
+  --green:     #1D9E75;
+  --green2:    #5DCAA5;
+  --green3:    #0a3326;
+  --blue:      #378ADD;
+  --blue2:     #85B7EB;
+  --blue3:     #0a1f33;
+  --red:       #E24B4A;
+  --amber:     #EF9F27;
+  --purple:    #9F77DD;
+  --radius:    8px;
+  --radius-lg: 12px;
+  --sidebar-w: 360px;
+}
+html, body { height: 100%; }
+body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; background: var(--bg); color: var(--text); overflow-x: hidden; }
+
+/* ── TOPBAR ── */
+.topbar {
+  display: flex; align-items: center; justify-content: space-between;
+  padding: 11px 16px; background: var(--bg2);
+  border-bottom: 0.5px solid var(--border2);
+  position: sticky; top: 0; z-index: 30; gap: 10px;
+}
+.topbar-left  { display: flex; align-items: center; gap: 10px; flex-shrink: 0; }
+.topbar-right { display: flex; align-items: center; gap: 10px; }
+.logo { width: 28px; height: 28px; background: var(--green); border-radius: 7px; display: flex; align-items: center; justify-content: center; flex-shrink: 0; }
+.logo svg { width: 15px; height: 15px; }
+.title   { font-size: 13px; font-weight: 600; white-space: nowrap; }
+.subtitle{ font-size: 11px; color: var(--text2); white-space: nowrap; }
+.conn-status { display: flex; align-items: center; gap: 6px; font-size: 12px; color: var(--text2); }
+.cdot { width: 7px; height: 7px; border-radius: 50%; background: var(--text3); flex-shrink: 0; }
+.cdot.on  { background: var(--green); box-shadow: 0 0 0 3px rgba(29,158,117,0.25); }
+.cdot.err { background: var(--red); }
+.cdot.pulse { animation: pulse 1.4s infinite; }
+@keyframes pulse { 0%,100%{opacity:1} 50%{opacity:.35} }
+.elapsed { font-size: 11px; color: var(--text3); font-family: monospace; }
+.btn-sim {
+  display: flex; align-items: center; gap: 6px;
+  padding: 6px 12px; border-radius: var(--radius);
+  background: var(--green); color: #fff;
+  border: none; font-size: 12px; font-weight: 600; cursor: pointer;
+  white-space: nowrap; transition: background .15s;
+}
+.btn-sim:hover { background: #17876a; }
+.btn-sim svg { width: 13px; height: 13px; }
+
+/* ── SIDEBAR OVERLAY ── */
+.sim-overlay {
+  display: none; position: fixed; inset: 0;
+  background: rgba(0,0,0,.6); z-index: 40;
+  backdrop-filter: blur(2px);
+}
+.sim-overlay.open { display: block; }
+
+.sim-sidebar {
+  position: fixed; top: 0; right: 0; bottom: 0;
+  width: var(--sidebar-w); background: var(--bg2);
+  border-left: 0.5px solid var(--border2);
+  z-index: 50; display: flex; flex-direction: column;
+  transform: translateX(100%);
+  transition: transform .25s cubic-bezier(.4,0,.2,1);
+  overflow: hidden;
+}
+.sim-sidebar.open { transform: translateX(0); }
+
+.sim-head {
+  display: flex; align-items: center; justify-content: space-between;
+  padding: 14px 16px; border-bottom: 0.5px solid var(--border2); flex-shrink: 0;
+}
+.sim-head-title { font-size: 13px; font-weight: 600; }
+.sim-close {
+  width: 26px; height: 26px; border-radius: 6px;
+  background: var(--bg3); border: none; color: var(--text2);
+  cursor: pointer; font-size: 18px; display: flex; align-items: center; justify-content: center;
+  transition: background .12s;
+}
+.sim-close:hover { background: var(--bg4); color: var(--text); }
+
+.sim-body {
+  flex: 1; overflow-y: auto; padding: 16px;
+  display: flex; flex-direction: column; gap: 20px;
+}
+.sim-body::-webkit-scrollbar { width: 4px; }
+.sim-body::-webkit-scrollbar-track { background: transparent; }
+.sim-body::-webkit-scrollbar-thumb { background: var(--bg4); border-radius: 4px; }
+
+.sim-section { display: flex; flex-direction: column; gap: 10px; }
+.sim-section-title {
+  font-size: 10px; font-weight: 700; color: var(--text3);
+  text-transform: uppercase; letter-spacing: .08em;
+  padding-bottom: 6px; border-bottom: 0.5px solid var(--border);
+}
+
+/* Fields */
+.field { display: flex; flex-direction: column; gap: 4px; }
+.field label { font-size: 11px; color: var(--text2); }
+.field input, .field select {
+  font-size: 12px; padding: 7px 10px; border-radius: var(--radius);
+  border: 0.5px solid var(--border2); background: var(--bg3);
+  color: var(--text); outline: none; width: 100%;
+}
+.field input:focus, .field select:focus { border-color: var(--green); box-shadow: 0 0 0 2px rgba(29,158,117,.15); }
+.fields-2 { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
+
+/* Metric chips */
+.mchip-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 6px; }
+.mchip {
+  display: flex; align-items: center; gap: 7px;
+  padding: 7px 9px; border-radius: var(--radius);
+  border: 0.5px solid var(--border); background: var(--bg3);
+  cursor: pointer; user-select: none; transition: all .12s;
+  font-size: 11px; color: var(--text2); line-height: 1.2;
+}
+.mchip:hover { border-color: var(--border2); color: var(--text); }
+.mchip.on { border-color: var(--green); background: var(--green3); color: var(--green2); }
+.mchip-dot { width: 6px; height: 6px; border-radius: 50%; background: var(--text3); flex-shrink: 0; transition: background .12s; }
+.mchip.on .mchip-dot { background: var(--green2); }
+
+/* Stages */
+.stage-col-labels {
+  display: grid; grid-template-columns: 20px 1fr 1fr 1fr 24px;
+  gap: 5px; padding: 0 8px;
+}
+.stage-col-labels span { font-size: 10px; color: var(--text3); }
+.stages-list { display: flex; flex-direction: column; gap: 5px; }
+.stage-row {
+  display: grid; grid-template-columns: 20px 1fr 1fr 1fr 24px;
+  align-items: center; gap: 5px;
+  padding: 7px 8px; border-radius: var(--radius);
+  background: var(--bg3); border: 0.5px solid var(--border);
+}
+.stage-num { font-size: 10px; color: var(--text3); font-family: monospace; text-align: center; }
+.stage-row input, .stage-row select {
+  font-size: 11px; padding: 4px 7px; border-radius: 5px;
+  border: 0.5px solid var(--border2); background: var(--bg4);
+  color: var(--text); outline: none; width: 100%;
+}
+.stage-row input:focus { border-color: var(--green); }
+.stage-del { background: none; border: none; color: var(--text3); cursor: pointer; font-size: 16px; line-height: 1; transition: color .1s; }
+.stage-del:hover { color: var(--red); }
+.btn-add-stage {
+  display: flex; align-items: center; justify-content: center; gap: 5px;
+  width: 100%; padding: 7px; border-radius: var(--radius);
+  border: 0.5px dashed var(--border2); background: transparent;
+  color: var(--text3); font-size: 12px; cursor: pointer; transition: all .12s;
+}
+.btn-add-stage:hover { border-color: var(--green); color: var(--green2); }
+
+/* Script output */
+.btn-gen {
+  width: 100%; padding: 9px; border-radius: var(--radius);
+  background: var(--green); color: #fff; border: none;
+  font-size: 13px; font-weight: 600; cursor: pointer; transition: background .15s;
+}
+.btn-gen:hover { background: #17876a; }
+
+.script-wrap { background: var(--bg3); border: 0.5px solid var(--border); border-radius: var(--radius); overflow: hidden; margin-top: 2px; }
+.script-toolbar { display: flex; align-items: center; justify-content: space-between; padding: 7px 10px; border-bottom: 0.5px solid var(--border); }
+.script-fname { font-size: 11px; color: var(--text3); font-family: monospace; }
+.btn-action {
+  font-size: 11px; padding: 3px 10px; border-radius: 5px;
+  background: var(--bg4); border: 0.5px solid var(--border2);
+  color: var(--text2); cursor: pointer; transition: all .12s;
+}
+.btn-action:hover { border-color: var(--green2); color: var(--green2); }
+.btn-action.ok { background: var(--green3); border-color: var(--green); color: var(--green2); }
+.script-actions { display: flex; gap: 5px; }
+.script-code {
+  font-family: 'Courier New', monospace; font-size: 11px; padding: 10px;
+  white-space: pre; overflow-x: auto; line-height: 1.75;
+  max-height: 240px; overflow-y: auto;
+}
+.sc-comment { color: var(--text3); }
+.sc-cmd     { color: var(--green2); }
+.sc-sleep   { color: var(--amber); }
+.sc-var     { color: var(--blue2); }
+.sc-echo    { color: var(--text2); }
+
+/* ── MAIN DASHBOARD ── */
+.dashboard { padding: 14px; display: flex; flex-direction: column; gap: 12px; }
+
+/* Stage progress indicator */
+.stage-progress { background: var(--bg2); border: 0.5px solid var(--border); border-radius: var(--radius-lg); padding: 12px 14px; display: none; }
+.stage-progress.visible { display: block; }
+.sp-label { font-size: 10px; font-weight: 700; color: var(--text3); text-transform: uppercase; letter-spacing: .07em; margin-bottom: 10px; }
+.sp-stages { display: flex; gap: 6px; flex-wrap: wrap; }
+.sp-stage {
+  display: flex; align-items: center; gap: 5px;
+  padding: 4px 10px; border-radius: 20px; font-size: 11px; font-weight: 500;
+  background: var(--bg3); border: 0.5px solid var(--border); color: var(--text3);
+  transition: all .2s;
+}
+.sp-stage.active { background: var(--green3); border-color: var(--green); color: var(--green2); animation: pulse 1.4s infinite; }
+.sp-stage.done   { background: var(--bg4); border-color: var(--border2); color: var(--text2); }
+.sp-stage-dot { width: 5px; height: 5px; border-radius: 50%; background: currentColor; }
+
+/* Servers grid */
+.grid-servers { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
+@media(max-width:900px){ .grid-servers { grid-template-columns: 1fr; } }
+
+.server-panel { background: var(--bg2); border: 0.5px solid var(--border); border-radius: var(--radius-lg); overflow: hidden; }
+.panel-head { display: flex; align-items: center; justify-content: space-between; padding: 11px 14px; border-bottom: 0.5px solid var(--border); }
+.panel-name { font-size: 13px; font-weight: 600; }
+.panel-port { font-size: 10px; font-family: monospace; color: var(--text2); background: var(--bg3); padding: 2px 7px; border-radius: 4px; }
+.srv-badge { font-size: 11px; padding: 2px 10px; border-radius: 20px; font-weight: 500; }
+.srv-badge.live    { background: var(--green3); color: var(--green2); border: 0.5px solid var(--green); }
+.srv-badge.waiting { background: var(--bg3); color: var(--text3); border: 0.5px solid var(--border); }
+
+.tiles { display: grid; gap: 1px; background: var(--border); }
+.tile { background: var(--bg2); padding: 10px 12px; }
+.tile-lbl { font-size: 10px; color: var(--text3); text-transform: uppercase; letter-spacing: .06em; margin-bottom: 3px; }
+.tile-val { font-size: 19px; font-weight: 700; line-height: 1; }
+.tile-unit{ font-size: 10px; color: var(--text3); margin-top: 3px; }
+.col-green  { color: var(--green2); }
+.col-blue   { color: var(--blue2); }
+.col-amber  { color: var(--amber); }
+.col-red    { color: var(--red); }
+.col-purple { color: var(--purple); }
+.col-text   { color: var(--text2); }
+
+.panel-charts { display: flex; flex-direction: column; }
+.chart-sec { padding: 11px 14px; border-top: 0.5px solid var(--border); }
+.chart-sec-title { font-size: 11px; color: var(--text2); font-weight: 500; margin-bottom: 8px; }
+.charts-2col { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
+
+/* Compare */
+.grid-compare { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
+@media(max-width:900px){ .grid-compare { grid-template-columns: 1fr; } }
+.cmp-panel { background: var(--bg2); border: 0.5px solid var(--border); border-radius: var(--radius-lg); padding: 14px; }
+.cmp-title { font-size: 10px; font-weight: 700; color: var(--text3); text-transform: uppercase; letter-spacing: .07em; margin-bottom: 10px; }
+.legend-row { display: flex; gap: 14px; margin-bottom: 8px; }
+.leg { display: flex; align-items: center; gap: 5px; font-size: 11px; color: var(--text2); }
+.leg-dot { width: 8px; height: 8px; border-radius: 2px; flex-shrink: 0; }
+
+/* Log */
+.log-wrap { background: var(--bg2); border: 0.5px solid var(--border); border-radius: var(--radius-lg); overflow: hidden; }
+.log-head { display: flex; align-items: center; justify-content: space-between; padding: 8px 12px; border-bottom: 0.5px solid var(--border); }
+.log-head-title { font-size: 11px; font-weight: 500; color: var(--text2); }
+.log-clear { font-size: 11px; color: var(--text3); background: none; border: none; cursor: pointer; }
+.log-body { font-family: monospace; font-size: 11px; padding: 8px 12px; max-height: 90px; overflow-y: auto; display: flex; flex-direction: column; gap: 2px; }
+.log-line      { color: var(--text2); }
+.log-line.info { color: var(--green2); }
+.log-line.warn { color: var(--amber); }
+.log-line.err  { color: var(--red); }
+</style>
+</head>
+<body>
+
+<!-- ── TOPBAR ── -->
+<div class="topbar">
+  <div class="topbar-left">
+    <div class="logo">
+      <svg viewBox="0 0 16 16" fill="none">
+        <rect x="2" y="10" width="2.5" height="4" rx="1" fill="white"/>
+        <rect x="6" y="7" width="2.5" height="7" rx="1" fill="white" opacity=".8"/>
+        <rect x="10" y="4" width="2.5" height="10" rx="1" fill="white" opacity=".55"/>
+        <circle cx="13" cy="3" r="2" fill="white" opacity=".4"/>
+      </svg>
+    </div>
+    <div>
+      <div class="title">TI6 — Live Benchmark Dashboard</div>
+      <div class="subtitle">Métricas em tempo real via WebSocket</div>
+    </div>
+  </div>
+  <div class="topbar-right">
+    <button class="btn-sim" onclick="openSim()">
+      <svg viewBox="0 0 16 16" fill="none">
+        <path d="M2 4h12M2 8h8M2 12h5" stroke="white" stroke-width="1.5" stroke-linecap="round"/>
+        <circle cx="13" cy="10" r="2.5" stroke="white" stroke-width="1.3"/>
+        <path d="M13 8V7M13 13v-1" stroke="white" stroke-width="1.3" stroke-linecap="round"/>
+      </svg>
+      Montar simulação
+    </button>
+    <div class="conn-status">
+      <div class="cdot" id="conn-dot"></div>
+      <span id="conn-label">Conectando...</span>
+    </div>
+    <div class="elapsed" id="elapsed">00:00:00</div>
+  </div>
+</div>
+
+<!-- ── SIMULATION SIDEBAR ── -->
+<div class="sim-overlay" id="sim-overlay" onclick="closeSim()"></div>
+<div class="sim-sidebar" id="sim-sidebar">
+  <div class="sim-head">
+    <span class="sim-head-title">🧪 Construtor de Simulação</span>
+    <button class="sim-close" onclick="closeSim()">×</button>
+  </div>
+  <div class="sim-body">
+
+    <!-- TARGET -->
+    <div class="sim-section">
+      <div class="sim-section-title">Alvo</div>
+      <div class="field">
+        <label>IP / hostname do servidor</label>
+        <input type="text" id="sim-host" value="192.168.1.100" placeholder="ex: 192.168.1.100" />
+      </div>
+      <div class="fields-2">
+        <div class="field">
+          <label>Threads wrk</label>
+          <select id="sim-threads">
+            <option value="4">4 threads</option>
+            <option value="8">8 threads</option>
+            <option value="12" selected>12 threads</option>
+            <option value="16">16 threads</option>
+            <option value="24">24 threads</option>
+          </select>
+        </div>
+        <div class="field">
+          <label>Servidores</label>
+          <select id="sim-targets">
+            <option value="both" selected>Ambos</option>
+            <option value="thread">Só Multithread</option>
+            <option value="process">Só Multiprocess</option>
+          </select>
+        </div>
+      </div>
+    </div>
+
+    <!-- METRICS -->
+    <div class="sim-section">
+      <div class="sim-section-title">Métricas a monitorar no dashboard</div>
+      <div class="mchip-grid" id="metric-chips"></div>
+    </div>
+
+    <!-- STAGES -->
+    <div class="sim-section">
+      <div class="sim-section-title">Estágios de carga</div>
+      <div class="stage-col-labels">
+        <span></span><span>Conexões</span><span>Duração</span><span>Intervalo</span><span></span>
+      </div>
+      <div class="stages-list" id="stages-list"></div>
+      <button class="btn-add-stage" onclick="addStage()">＋ Adicionar estágio</button>
+    </div>
+
+    <!-- GENERATE -->
+    <div class="sim-section">
+      <div class="sim-section-title">Gerar script wrk</div>
+      <button class="btn-gen" onclick="generateScript()">⚡ Gerar script</button>
+      <div class="script-wrap" id="script-wrap" style="display:none">
+        <div class="script-toolbar">
+          <span class="script-fname" id="script-fname">benchmark.sh</span>
+          <div class="script-actions">
+            <button class="btn-action" onclick="downloadScript()">↓ Baixar .sh</button>
+            <button class="btn-action" id="btn-copy" onclick="copyScript()">Copiar</button>
+          </div>
+        </div>
+        <div class="script-code" id="script-code"></div>
+      </div>
+    </div>
+
+  </div>
+</div>
+
+<!-- ── MAIN DASHBOARD ── -->
+<div class="dashboard">
+
+  <!-- Stage progress indicator -->
+  <div class="stage-progress" id="stage-progress">
+    <div class="sp-label">Estágios da simulação configurados</div>
+    <div class="sp-stages" id="sp-stages"></div>
+  </div>
+
+  <!-- Server panels -->
+  <div class="grid-servers">
+    <div class="server-panel">
+      <div class="panel-head">
+        <div style="display:flex;align-items:center;gap:8px">
+          <span class="panel-name" style="color:var(--green2)">Multithread</span>
+          <span class="panel-port">:8080</span>
+        </div>
+        <span class="srv-badge waiting" id="status-thread">aguardando carga</span>
+      </div>
+      <div class="tiles" id="tiles-thread"></div>
+      <div class="panel-charts" id="charts-thread"></div>
+    </div>
+    <div class="server-panel">
+      <div class="panel-head">
+        <div style="display:flex;align-items:center;gap:8px">
+          <span class="panel-name" style="color:var(--blue2)">Multiprocess</span>
+          <span class="panel-port">:8081</span>
+        </div>
+        <span class="srv-badge waiting" id="status-process">aguardando carga</span>
+      </div>
+      <div class="tiles" id="tiles-process"></div>
+      <div class="panel-charts" id="charts-process"></div>
+    </div>
+  </div>
+
+  <!-- Comparison -->
+  <div class="grid-compare" id="grid-compare"></div>
+
+  <!-- Log -->
+  <div class="log-wrap">
+    <div class="log-head">
+      <span class="log-head-title">Log de eventos</span>
+      <button class="log-clear" onclick="clearLog()">limpar</button>
+    </div>
+    <div class="log-body" id="log-body">
+      <span class="log-line info">[sistema] Dashboard TI6 iniciado. Clique em "Montar simulação" para configurar os testes.</span>
+    </div>
+  </div>
+</div>
+
+<script>
+// ══════════════════════
+//  CONFIG
+// ══════════════════════
+const WS_URL   = `ws://${location.hostname}:8765`;
+const POLL_URL = `http://${location.hostname}:8888/metrics`;
+const MAX_PTS  = 60;
+
+// ── All metric definitions ──
+const ALL_METRICS = [
+  { id:'throughput',  label:'Throughput',      unit:'req/s', color:'green',  chart:true,  key: d => d?.throughput },
+  { id:'p99',         label:'Latência p99',     unit:'ms',    color:'green',  chart:true,  key: d => d?.latency?.p99 },
+  { id:'p50',         label:'Latência p50',     unit:'ms',    color:'text',   chart:true,  key: d => d?.latency?.p50 },
+  { id:'p100',        label:'Latência Máx',     unit:'ms',    color:'amber',  chart:false, key: d => d?.latency?.p100 },
+  { id:'cpu',         label:'CPU',              unit:'%',     color:'amber',  chart:true,  key: d => d?.cpu,      maxY:100 },
+  { id:'memory',      label:'Memória',          unit:'%',     color:'blue',   chart:true,  key: d => d?.memory,   maxY:100 },
+  { id:'errors',      label:'Taxa de Erros',    unit:'total', color:'red',    chart:false, key: d => d?.errors },
+  { id:'active_conn', label:'Conexões Ativas',  unit:'agora', color:'amber',  chart:false, key: d => d?.active_conn },
+  { id:'jitter',      label:'Jitter',           unit:'ms',    color:'purple', chart:false, key: d => d ? Math.abs((d.latency?.p99||0)-(d.latency?.p50||0)) : null },
+  { id:'bandwidth',   label:'Largura de Banda', unit:'KB/s',  color:'blue',   chart:false, key: d => d ? +((d.throughput||0)*0.25).toFixed(1) : null },
+  { id:'pkt_loss',    label:'Perda de Pacotes', unit:'%',     color:'red',    chart:false, key: d => d ? +((d.errors||0)/Math.max(1,d.requests||1)*100).toFixed(3) : null },
+  { id:'requests',    label:'Requisições',      unit:'total', color:'green',  chart:false, key: d => d?.requests },
+];
+
+let selectedMetrics = new Set(['throughput','p99','cpu','memory','errors','active_conn']);
+
+let stages = [
+  { conns:100,  dur:'30s',  sleep:'5s'  },
+  { conns:500,  dur:'60s',  sleep:'10s' },
+  { conns:1000, dur:'60s',  sleep:'10s' },
+];
+
+let wsConn=null, pollTimer=null, tickCount=0, startTime=Date.now();
+let charts={thread:{},process:{}}, cmpCharts={};
+let _script='', _scriptName='benchmark.sh';
+
+// ══════════════════════
+//  SIDEBAR
+// ══════════════════════
+function openSim()  { document.getElementById('sim-overlay').classList.add('open'); document.getElementById('sim-sidebar').classList.add('open'); }
+function closeSim() { document.getElementById('sim-overlay').classList.remove('open'); document.getElementById('sim-sidebar').classList.remove('open'); }
+
+// ══════════════════════
+//  METRIC CHIPS
+// ══════════════════════
+function renderChips() {
+  document.getElementById('metric-chips').innerHTML = ALL_METRICS.map(m =>
+    `<div class="mchip ${selectedMetrics.has(m.id)?'on':''}" onclick="toggleMetric('${m.id}',this)">
+       <span class="mchip-dot"></span>${m.label}
+       <span style="font-size:9px;color:inherit;opacity:.6;margin-left:auto">${m.unit}</span>
+     </div>`
+  ).join('');
+}
+
+function toggleMetric(id, el) {
+  if (selectedMetrics.has(id)) {
+    if (selectedMetrics.size <= 1) return;
+    selectedMetrics.delete(id);
+    el.classList.remove('on');
+  } else {
+    selectedMetrics.add(id);
+    el.classList.add('on');
+  }
+  rebuildDashboard();
+}
+
+// ══════════════════════
+//  STAGES
+// ══════════════════════
+function renderStages() {
+  document.getElementById('stages-list').innerHTML = stages.map((s,i) =>
+    `<div class="stage-row">
+      <span class="stage-num">${i+1}</span>
+      <input type="number" value="${s.conns}" min="1"
+             onchange="stages[${i}].conns=+this.value;syncProgress()" />
+      <input type="text" value="${s.dur}"
+             onchange="stages[${i}].dur=this.value;syncProgress()" />
+      <input type="text" value="${s.sleep}"
+             onchange="stages[${i}].sleep=this.value" />
+      <button class="stage-del" onclick="removeStage(${i})">×</button>
+    </div>`
+  ).join('');
+  syncProgress();
+}
+
+function addStage() {
+  const last = stages[stages.length-1];
+  stages.push({ conns: last ? last.conns*2 : 100, dur:'60s', sleep:'10s' });
+  renderStages();
+}
+
+function removeStage(i) {
+  if (stages.length <= 1) return;
+  stages.splice(i,1); renderStages();
+}
+
+function syncProgress() {
+  const prog  = document.getElementById('stage-progress');
+  const list  = document.getElementById('sp-stages');
+  prog.classList.toggle('visible', stages.length > 0);
+  list.innerHTML = stages.map((s,i) =>
+    `<div class="sp-stage" id="sp-stage-${i}">
+       <span class="sp-stage-dot"></span>${s.conns} conn · ${s.dur}
+     </div>`
+  ).join('');
+}
+
+// ══════════════════════
+//  SCRIPT GENERATOR
+// ══════════════════════
+function esc(s){ return s.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;'); }
+
+function generateScript() {
+  const host    = document.getElementById('sim-host').value.trim() || '192.168.1.100';
+  const threads = document.getElementById('sim-threads').value;
+  const target  = document.getElementById('sim-targets').value;
+  const metrics = [...selectedMetrics].map(id=>ALL_METRICS.find(m=>m.id===id)?.label).filter(Boolean);
+  const now     = new Date().toISOString().slice(0,19).replace(/[T:]/g,'-');
+  const fname   = `benchmark_${now}.sh`;
+
+  const servers = [];
+  if (target !== 'process') servers.push({name:'multithread', port:8080});
+  if (target !== 'thread')  servers.push({name:'multiprocess',port:8081});
+
+  const lines = [];
+  lines.push(['c',`#!/bin/bash`]);
+  lines.push(['c',`# ──────────────────────────────────────────────────────`]);
+  lines.push(['c',`# TI6 Benchmark — gerado em ${now}`]);
+  lines.push(['c',`# Métricas: ${metrics.join(', ')}`]);
+  lines.push(['c',`# Estágios: ${stages.length}  |  Servidores: ${servers.map(s=>s.name).join(', ')}`]);
+  lines.push(['c',`# ──────────────────────────────────────────────────────`]);
+  lines.push(['v',``]);
+  lines.push(['v',`HOST="${host}"`]);
+  lines.push(['v',`THREADS=${threads}`]);
+  lines.push(['v',`RESULTS_DIR="results_${now}"`]);
+  lines.push(['cmd',`mkdir -p "$RESULTS_DIR"`]);
+  lines.push(['v',``]);
+
+  for (const srv of servers) {
+    lines.push(['c',`# ════ ${srv.name.toUpperCase()} (porta ${srv.port}) ════`]);
+    stages.forEach((s, i) => {
+      const out = `$RESULTS_DIR/${srv.name}_stage${i+1}_${s.conns}c.txt`;
+      lines.push(['echo',`echo "[$(date +%T)] Estágio ${i+1}/${stages.length} — ${srv.name} — ${s.conns} conexões — duração ${s.dur}"`]);
+      lines.push(['cmd', `wrk -t$THREADS -c${s.conns} -d${s.dur} --latency "http://$HOST:${srv.port}" > "${out}"`]);
+      lines.push(['echo',`echo "  → salvo em ${out}"`]);
+      if (i < stages.length-1 || servers.indexOf(srv) < servers.length-1) {
+        lines.push(['echo',`echo "  Aguardando ${s.sleep}..."`]);
+        lines.push(['sleep',`sleep ${s.sleep}`]);
+      }
+      lines.push(['v',``]);
+    });
+  }
+
+  lines.push(['echo',`echo "✓ Simulação concluída! Resultados em: $RESULTS_DIR/"`]);
+  lines.push(['cmd', `ls -lh "$RESULTS_DIR/"`]);
+
+  _script = lines.map(([,l])=>l).join('\n');
+  _scriptName = fname;
+
+  // Highlighted render
+  const colorMap = {
+    c:'sc-comment', v:'', cmd:'sc-cmd', echo:'sc-echo', sleep:'sc-sleep', var:'sc-var'
+  };
+  document.getElementById('script-code').innerHTML =
+    lines.map(([type,l]) => {
+      const cls = colorMap[type] || '';
+      return cls ? `<span class="${cls}">${esc(l)}</span>` : `<span>${esc(l)}</span>`;
+    }).join('\n');
+
+  document.getElementById('script-fname').textContent = fname;
+  document.getElementById('script-wrap').style.display = 'block';
+  addLog(`Script gerado: ${stages.length} estágio(s), ${servers.map(s=>s.name).join(' + ')}.`, 'info');
+}
+
+function copyScript() {
+  navigator.clipboard.writeText(_script).then(() => {
+    const btn = document.getElementById('btn-copy');
+    btn.textContent = '✓ Copiado'; btn.classList.add('ok');
+    setTimeout(()=>{ btn.textContent='Copiar'; btn.classList.remove('ok'); }, 2000);
+  });
+}
+function downloadScript() {
+  const a = document.createElement('a');
+  a.href = URL.createObjectURL(new Blob([_script],{type:'text/x-shellscript'}));
+  a.download = _scriptName; a.click();
+}
+
+// ══════════════════════
+//  DASHBOARD BUILDER
+// ══════════════════════
+function rebuildDashboard() {
+  // Destroy old charts
+  Object.values(charts).forEach(mc => Object.values(mc).forEach(c=>c.destroy()));
+  Object.values(cmpCharts).forEach(c=>c.destroy());
+  charts={thread:{},process:{}}; cmpCharts={};
+
+  buildPanel('thread');
+  buildPanel('process');
+  buildCompare();
+}
+
+function buildPanel(side) {
+  const metrics = ALL_METRICS.filter(m=>selectedMetrics.has(m.id));
+  const px = side==='thread'?'t':'p';
+  const accent = side==='thread'?'#1D9E75':'#378ADD';
+
+  // Tiles
+  const tilesEl = document.getElementById(`tiles-${side}`);
+  const cols = Math.min(metrics.length, 4);
+  tilesEl.style.gridTemplateColumns = `repeat(${cols}, 1fr)`;
+  tilesEl.innerHTML = metrics.map(m=>
+    `<div class="tile">
+       <div class="tile-lbl">${m.label}</div>
+       <div class="tile-val col-${m.color}" id="${px}-${m.id}">—</div>
+       <div class="tile-unit">${m.unit}</div>
+     </div>`
+  ).join('');
+
+  // Charts sections
+  const chartsEl = document.getElementById(`charts-${side}`);
+  const chartMs  = metrics.filter(m=>m.chart);
+  if (!chartMs.length) { chartsEl.innerHTML=''; return; }
+
+  const latMs  = chartMs.filter(m=>['p99','p50','throughput'].includes(m.id));
+  const sysMs  = chartMs.filter(m=>['cpu','memory'].includes(m.id));
+  const restMs = chartMs.filter(m=>!latMs.includes(m)&&!sysMs.includes(m));
+
+  let html = '';
+  if (latMs.length) {
+    html += `<div class="chart-sec">
+      <div class="chart-sec-title">${latMs.map(m=>m.label).join(' · ')}</div>
+      <div style="position:relative;height:85px"><canvas id="chart-${px}-lat" role="img" aria-label="Gráfico latência ${side}"></canvas></div>
+    </div>`;
+  }
+  if (sysMs.length) {
+    html += `<div class="chart-sec"><div class="charts-2col">`;
+    sysMs.forEach(m => {
+      html += `<div>
+        <div class="chart-sec-title">${m.label} %</div>
+        <div style="position:relative;height:65px"><canvas id="chart-${px}-${m.id}" role="img" aria-label="${m.label} ${side}"></canvas></div>
+      </div>`;
+    });
+    html += `</div></div>`;
+  }
+  restMs.forEach(m => {
+    html += `<div class="chart-sec">
+      <div class="chart-sec-title">${m.label}</div>
+      <div style="position:relative;height:65px"><canvas id="chart-${px}-x-${m.id}" role="img" aria-label="${m.label} ${side}"></canvas></div>
+    </div>`;
+  });
+  chartsEl.innerHTML = html;
+
+  // Init Chart.js
+  if (latMs.length) {
+    charts[side]['lat'] = makeMulti(`chart-${px}-lat`,
+      latMs.map((m,i)=>({ label:m.label, color:[accent,'#EF9F27','#9F77DD'][i]||accent }))
+    );
+  }
+  sysMs.forEach(m => {
+    const c = m.id==='cpu'?'#EF9F27':(side==='thread'?'#378ADD':'#9F77DD');
+    charts[side][m.id] = makeLine(`chart-${px}-${m.id}`, c, m.maxY);
+  });
+  restMs.forEach(m => {
+    const el = document.getElementById(`chart-${px}-x-${m.id}`);
+    if (el) charts[side][m.id] = makeLine(`chart-${px}-x-${m.id}`, accent);
+  });
+}
+
+function buildCompare() {
+  const cmpEl  = document.getElementById('grid-compare');
+  const cmpMs  = ALL_METRICS.filter(m=>selectedMetrics.has(m.id)&&m.chart).slice(0,4);
+  if (!cmpMs.length) { cmpEl.innerHTML=''; return; }
+
+  cmpEl.innerHTML = cmpMs.map(m=>
+    `<div class="cmp-panel">
+       <div class="cmp-title">Comparação — ${m.label}</div>
+       <div class="legend-row">
+         <span class="leg"><span class="leg-dot" style="background:#1D9E75"></span>Multithread</span>
+         <span class="leg"><span class="leg-dot" style="background:#378ADD"></span>Multiprocess</span>
+       </div>
+       <div style="position:relative;height:130px">
+         <canvas id="cmp-${m.id}" role="img" aria-label="Comparação ${m.label}"></canvas>
+       </div>
+     </div>`
+  ).join('');
+
+  cmpMs.forEach(m => {
+    cmpCharts[m.id] = makeMulti(`cmp-${m.id}`, [
+      {label:'Multithread', color:'#1D9E75'},
+      {label:'Multiprocess',color:'#378ADD'},
+    ], true);
+  });
+}
+
+// ══════════════════════
+//  CHART FACTORIES
+// ══════════════════════
+const TICK = {font:{size:10},color:'#5c5a54',maxTicksLimit:4};
+const GRID = {color:'rgba(255,255,255,0.05)'};
+
+function makeLine(id, color, maxY) {
+  return new Chart(document.getElementById(id),{
+    type:'line',
+    data:{labels:[],datasets:[{data:[],borderColor:color,
+      backgroundColor:color+'22',tension:.35,pointRadius:0,borderWidth:1.5,fill:true}]},
+    options:{responsive:true,maintainAspectRatio:false,animation:{duration:300},
+      plugins:{legend:{display:false}},
+      scales:{x:{display:false},y:{ticks:TICK,grid:GRID,...(maxY?{max:maxY}:{})}}}
+  });
+}
+
+function makeMulti(id, defs, legend=false) {
+  return new Chart(document.getElementById(id),{
+    type:'line',
+    data:{labels:[],datasets:defs.map((d,i)=>({
+      label:d.label,data:[],borderColor:d.color,
+      backgroundColor:d.color+'18',tension:.35,pointRadius:0,borderWidth:1.5,
+      fill:i===0,borderDash:i>0?[4,3]:[],
+    }))},
+    options:{responsive:true,maintainAspectRatio:false,animation:{duration:300},
+      plugins:{legend:{display:legend||defs.length>1,labels:{color:'#9e9c95',font:{size:10},boxWidth:8,padding:8}}},
+      scales:{x:{display:false},y:{ticks:TICK,grid:GRID}}}
+  });
+}
+
+function pushPt(chart, ...vals) {
+  if(!chart) return;
+  chart.data.labels.push(String(tickCount));
+  vals.forEach((v,i)=>{
+    chart.data.datasets[i]?.data.push(v!=null ? +Number(v).toFixed(2) : null);
+  });
+  if(chart.data.labels.length > MAX_PTS){
+    chart.data.labels.shift();
+    chart.data.datasets.forEach(ds=>ds.data.shift());
+  }
+  chart.update('none');
+}
+
+// ══════════════════════
+//  DATA HANDLER
+// ══════════════════════
+function fmt(v,dec=1){ return (v!=null&&v!==undefined)?Number(v).toFixed(dec):'—'; }
+function fmtI(v)     { return (v!=null&&v!==undefined)?Math.round(v).toLocaleString('pt-BR'):'—'; }
+
+function updatePanel(side, data) {
+  const px = side==='thread'?'t':'p';
+  ALL_METRICS.forEach(m=>{
+    const el=document.getElementById(`${px}-${m.id}`);
+    if(!el) return;
+    const v=m.key(data);
+    el.textContent = (v==null)?'—': Number.isInteger(v)?fmtI(v):fmt(v);
+  });
+  const badge=document.getElementById(`status-${side}`);
+  const live=data&&(data.requests>0);
+  badge.className=`srv-badge ${live?'live':'waiting'}`;
+  badge.textContent=live?'ao vivo':'aguardando carga';
+  // p99 color
+  const p99=document.getElementById(`${px}-p99`);
+  if(p99) p99.style.color=(data?.latency?.p99>300)?'var(--red)':(side==='thread'?'var(--green2)':'var(--blue2)');
+}
+
+function handlePayload(payload) {
+  tickCount++;
+  const t=payload.multithread, p=payload.multiprocess;
+  updatePanel('thread',t);
+  updatePanel('process',p);
+
+  ['thread','process'].forEach(side=>{
+    const d=side==='thread'?t:p;
+    const c=charts[side];
+    const latMs=ALL_METRICS.filter(m=>selectedMetrics.has(m.id)&&['p99','p50','throughput'].includes(m.id)&&m.chart);
+    if(c.lat && latMs.length) pushPt(c.lat,...latMs.map(m=>m.key(d)));
+    if(c.cpu)    pushPt(c.cpu,   d?.cpu);
+    if(c.memory) pushPt(c.memory,d?.memory);
+    ALL_METRICS.filter(m=>selectedMetrics.has(m.id)&&m.chart&&!['p99','p50','throughput','cpu','memory'].includes(m.id))
+      .forEach(m=>{ if(c[m.id]) pushPt(c[m.id],m.key(d)); });
+  });
+
+  ALL_METRICS.filter(m=>selectedMetrics.has(m.id)&&m.chart).forEach(m=>{
+    if(cmpCharts[m.id]) pushPt(cmpCharts[m.id],m.key(t),m.key(p));
+  });
+}
+
+// ══════════════════════
+//  WEBSOCKET / POLLING
+// ══════════════════════
+function setConn(state){
+  const dot=document.getElementById('conn-dot'),lbl=document.getElementById('conn-label');
+  dot.className='cdot';
+  const M={connected:['on','WebSocket conectado'],polling:['on pulse','Polling HTTP'],error:['err','Sem conexão'],_:['pulse','Conectando...']};
+  const [c,t]=M[state]||M['_'];
+  c.split(' ').forEach(x=>x&&dot.classList.add(x)); lbl.textContent=t;
+}
+function connectWS(){
+  addLog(`Conectando WebSocket…`,'warn');
+  try { wsConn=new WebSocket(WS_URL); } catch{ fallback(); return; }
+  wsConn.onopen    = ()=>{ setConn('connected'); addLog('WebSocket conectado.','info'); if(pollTimer){clearInterval(pollTimer);pollTimer=null;} };
+  wsConn.onmessage = e=>{ try{handlePayload(JSON.parse(e.data));}catch{} };
+  wsConn.onerror   = ()=>{ addLog('WebSocket falhou. Tentando polling…','warn'); fallback(); };
+  wsConn.onclose   = ()=>{ setConn('error'); addLog('WS fechado. Reconectando em 5s…','warn'); setTimeout(connectWS,5000); };
+}
+function fallback(){
+  if(pollTimer) return;
+  setConn('polling'); addLog('Polling HTTP ativo (2s).','warn');
+  pollTimer=setInterval(async()=>{
+    try{ const r=await fetch(POLL_URL); if(r.ok){handlePayload(await r.json());setConn('polling');} }catch{setConn('error');}
+  },2000);
+}
+
+// ══════════════════════
+//  LOG
+// ══════════════════════
+function addLog(msg,cls=''){
+  const b=document.getElementById('log-body');
+  const el=document.createElement('span'); el.className='log-line '+cls;
+  el.textContent=`[${new Date().toLocaleTimeString('pt-BR')}] ${msg}`;
+  b.appendChild(el); b.scrollTop=b.scrollHeight;
+  while(b.children.length>200) b.removeChild(b.firstChild);
+}
+function clearLog(){ document.getElementById('log-body').innerHTML=''; }
+
+// ══════════════════════
+//  ELAPSED
+// ══════════════════════
+setInterval(()=>{
+  const d=Math.floor((Date.now()-startTime)/1000);
+  document.getElementById('elapsed').textContent=
+    [Math.floor(d/3600),Math.floor((d%3600)/60),d%60].map(v=>String(v).padStart(2,'0')).join(':');
+},1000);
+
+// ══════════════════════
+//  INIT
+// ══════════════════════
+renderChips();
+renderStages();
+rebuildDashboard();
+connectWS();
+</script>
+</body>
+</html>
