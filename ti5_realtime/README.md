@@ -1,4 +1,4 @@
-# TI6 — Live Benchmark Dashboard
+# TI5 — Live Benchmark Dashboard
 
 Dashboard em tempo real para comparar os servidores TCP Multithread e Multiprocess,
 com atualização ao vivo via WebSocket enquanto o cliente gera carga com `wrk`.
