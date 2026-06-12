@@ -2,34 +2,42 @@
 Servidor TCP Multithread — com coleta de métricas em tempo real.
 Publica métricas via fila compartilhada com o metrics_server.
 Porta TCP: 9090
+
+Carga simulada (escopo definido):
+  1. Parsing do request HTTP (extrai método e path)
+  2. Leitura de arquivo do disco — data.txt ~1KB (I/O real)
+  3. Simulação de consulta externa — time.sleep(0.05) / 50ms
+  4. Resposta HTTP dinâmica
 """
 
 import socket
 import threading
 import time
+import os
 import psutil
 import numpy as np
 from collections import deque
 
 HOST = '0.0.0.0'
 PORT = 9090
-IO_SLEEP_TIME = 0.05  # 50ms I/O-bound simulado
+IO_SLEEP_TIME = 0.05  # 50ms simulando consulta a banco/API
+
+# Caminho do arquivo de dados (~1KB) — I/O real de disco
+DATA_FILE = os.path.join(os.path.dirname(__file__), "data.txt")
 
 # -------------------------------------------------------------------
 # Estado de métricas — protegido por lock para acesso thread-safe
 # -------------------------------------------------------------------
 _lock = threading.Lock()
-_request_latencies = deque(maxlen=10000)  # últimas 10k latências (ms)
+_request_latencies = deque(maxlen=10000)
 _request_count = 0
 _error_count = 0
 _start_time = time.time()
 _active_connections = 0
 
-# Amostras de CPU/memória (1 por segundo)
 _cpu_history = deque(maxlen=120)
 _mem_history = deque(maxlen=120)
 
-# Referência externa: o metrics_server injeta essa fila após o import
 _metrics_queue = None
 
 
@@ -44,19 +52,16 @@ def set_metrics_queue(q):
 # -------------------------------------------------------------------
 def _collect_system_metrics():
     processo = psutil.Process()
-    # Warm-up para o cpu_percent
-    processo.cpu_percent(interval=None)
-    
+    processo.cpu_percent(interval=None)  # warm-up
+
     while True:
-        # Mede o consumo apenas deste processo
         cpu = processo.cpu_percent(interval=None) / psutil.cpu_count()
-        mem = processo.memory_percent()
-        
+        mem = processo.memory_info().rss / (1024 * 1024)  # MB (pico de RAM)
+
         with _lock:
             _cpu_history.append(cpu)
             _mem_history.append(mem)
         time.sleep(1)
-
 
 
 # -------------------------------------------------------------------
@@ -83,6 +88,7 @@ def snapshot():
         p50 = p90 = p99 = p100 = avg = 0.0
 
     throughput = count / elapsed if elapsed > 0 else 0.0
+    error_rate = (errors / count * 100) if count > 0 else 0.0
 
     return {
         "server":      "multithread",
@@ -90,6 +96,7 @@ def snapshot():
         "timestamp":   time.time(),
         "requests":    count,
         "errors":      errors,
+        "error_rate":  round(error_rate, 2),
         "active_conn": active,
         "throughput":  round(throughput, 2),
         "latency": {
@@ -100,7 +107,9 @@ def snapshot():
             "p100": round(p100, 2),
         },
         "cpu":    round(cpu_hist[-1], 1) if cpu_hist else 0.0,
-        "memory": round(mem_hist[-1], 1) if mem_hist else 0.0,
+        "memory_mb": round(mem_hist[-1], 1) if mem_hist else 0.0,
+        # mantidos para compatibilidade com dashboard
+        "memory": round(mem_hist[-1] / psutil.virtual_memory().total * 100 * (1024*1024), 2) if mem_hist else 0.0,
         "cpu_history": [round(v, 1) for v in cpu_hist],
         "mem_history": [round(v, 1) for v in mem_hist],
     }
@@ -121,6 +130,11 @@ def _publish_metrics():
 
 # -------------------------------------------------------------------
 # Handler de cada conexão TCP
+# 4 etapas definidas no escopo:
+#   1. Parsing do request HTTP
+#   2. Leitura do arquivo data.txt (~1KB) do disco
+#   3. time.sleep(0.05) — simula consulta a banco/API
+#   4. Resposta HTTP dinâmica
 # -------------------------------------------------------------------
 def handle_client(client_socket, address):
     global _request_count, _error_count, _active_connections
@@ -130,16 +144,33 @@ def handle_client(client_socket, address):
         _active_connections += 1
 
     try:
-        client_socket.recv(4096)          # lê a requisição HTTP
-        time.sleep(IO_SLEEP_TIME)         # simula I/O-bound
+        # Etapa 1 — Parsing do request HTTP
+        raw = client_socket.recv(4096).decode(errors="ignore")
+        method = path = ""
+        if raw:
+            first_line = raw.split("\r\n")[0]
+            parts = first_line.split(" ")
+            if len(parts) >= 2:
+                method, path = parts[0], parts[1]
+
+        # Etapa 2 — Leitura de arquivo do disco (I/O real, ~1KB)
+        with open(DATA_FILE, "r") as f:
+            _ = f.read()
+
+        # Etapa 3 — Simula consulta externa (banco de dados / API)
+        time.sleep(IO_SLEEP_TIME)
+
+        # Etapa 4 — Resposta HTTP dinâmica
+        body = f"OK method={method} path={path}"
         response = (
             "HTTP/1.1 200 OK\r\n"
             "Content-Type: text/plain\r\n"
-            "Content-Length: 13\r\n"
+            f"Content-Length: {len(body)}\r\n"
             "\r\n"
-            "Hello, World!"
+            f"{body}"
         )
         client_socket.sendall(response.encode())
+
     except Exception:
         with _lock:
             _error_count += 1
@@ -156,7 +187,6 @@ def handle_client(client_socket, address):
 # Main
 # -------------------------------------------------------------------
 def main():
-    # Inicia coleta de sistema e publicação de métricas em background
     for target in (_collect_system_metrics, _publish_metrics):
         t = threading.Thread(target=target, daemon=True)
         t.start()

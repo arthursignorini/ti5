@@ -1,0 +1,11 @@
+servidor;concorrencia;duracao_s;repeticoes;throughput_req_s;p99_ms;ram_pico_mb;total_requisicoes;erros;error_rate_pct;ponto_ruptura
+multithread;10;30;3;182.52;89.29;ver_dashboard;16453;0;0.0;
+multithread;50;30;3;782.95;251.66;ver_dashboard;70586;0;0.0;
+multithread;100;30;3;1444.92;105.17;ver_dashboard;130285;0;0.0;
+multithread;200;30;3;1506.54;183.03;ver_dashboard;135937;0;0.0;
+multithread;500;30;3;1519.95;431.94;ver_dashboard;137329;0;0.0;
+multiprocess;10;30;3;19.39;749.09;ver_dashboard;1764;0;0.0;
+multiprocess;50;30;3;19.54;4712.18;ver_dashboard;1847;0;0.0;SIM
+multiprocess;100;30;3;20.0;8705.61;ver_dashboard;1978;2;0.1;
+multiprocess;200;30;3;19.55;9970.43;ver_dashboard;2190;1456;66.51;
+multiprocess;500;30;3;113.15;6712.81;ver_dashboard;13793;13669;99.02;
