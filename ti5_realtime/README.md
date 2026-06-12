@@ -6,7 +6,7 @@ com atualização ao vivo via WebSocket enquanto o cliente gera carga com `wrk`.
 ## Estrutura
 
 ```
-ti6_realtime/
+ti5_realtime/
 ├── launcher.py              ← Inicia tudo com 1 comando
 ├── requirements.txt
 └── projeto/
@@ -33,7 +33,7 @@ python launcher.py
 Saída esperada:
 ```
 =======================================================
-  TI6 — TCP Benchmark  |  Iniciando serviços...
+  TI5 — TCP Benchmark  |  Iniciando serviços...
 =======================================================
   ✓ Multithread  iniciado  (PID 12345) → porta 8080
   ✓ Multiprocess iniciado  (PID 12346) → porta 8081
